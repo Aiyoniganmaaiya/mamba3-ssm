@@ -20,3 +20,4 @@ checkpoints/
 # Test files
 test_corpus.txt
 benchmark_vram.py
+.pypirc_tmp
