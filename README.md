@@ -259,6 +259,30 @@ print("Generated sequence:", input_ids)
 | R | `mimo_rank` — number of MIMO streams |
 | G | `ngroups` — B/C projection sharing groups |
 
+## Training
+
+Train a 380M parameter model on your RTX 4060 Laptop:
+
+```bash
+# Quick test with custom text
+python train.py --dataset custom --data-path myfile.txt --epochs 1
+
+# Train on TinyStories (auto-downloads ~30MB)
+python train.py --dataset tinystories --epochs 3
+
+# Train on Wikitext-103 (English LM benchmark)
+python train.py --dataset wikitext --epochs 3
+
+# Resume from checkpoint
+python train.py --dataset tinystories --resume checkpoints/best.pt
+```
+
+Generate text from a trained model:
+
+```bash
+python generate.py --checkpoint checkpoints/best.pt --prompt "Once upon a time" --max-tokens 200
+```
+
 ## Testing
 
 ```bash
