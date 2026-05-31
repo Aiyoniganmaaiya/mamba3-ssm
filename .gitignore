@@ -1,0 +1,12 @@
+# Mamba-3 Reproduction
+
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.venv/
+venv/
+*.egg
+.DS_Store
