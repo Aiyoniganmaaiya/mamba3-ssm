@@ -9,6 +9,7 @@ from .config import MambaConfig, SSMConfig
 from .layer import Mamba3
 from .block import MambaLMHeadModel, MambaBlock
 from .ops import RMSNorm, apply_rope, ssm_scan_siso, ssm_scan_mimo
+from .presets import CONFIGS
 
 __all__ = [
     "MambaConfig",
@@ -20,4 +21,5 @@ __all__ = [
     "apply_rope",
     "ssm_scan_siso",
     "ssm_scan_mimo",
+    "CONFIGS",
 ]

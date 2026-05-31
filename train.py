@@ -363,12 +363,16 @@ def train(args):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train Mamba-3 380M on RTX 4060 Laptop")
+    parser = argparse.ArgumentParser(description="Train Mamba-3 on RTX 4060 Laptop 8GB")
 
-    # Model
-    parser.add_argument("--d-model", type=int, default=1536)
-    parser.add_argument("--n-layer", type=int, default=24)
-    parser.add_argument("--d-state", type=int, default=128)
+    # Preset configs (based on actual VRAM benchmarks)
+    parser.add_argument("--preset", choices=["small", "medium", "large", "380m"],
+                        default=None, help="Use a benchmarked preset: small(112M), medium(306M), large(367M), 380m(original 387M)")
+
+    # Model (defaults = medium preset)
+    parser.add_argument("--d-model", type=int, default=None)
+    parser.add_argument("--n-layer", type=int, default=None)
+    parser.add_argument("--d-state", type=int, default=64)
     parser.add_argument("--expand", type=int, default=2)
     parser.add_argument("--headdim", type=int, default=64)
     parser.add_argument("--mimo-rank", type=int, default=4)
@@ -383,9 +387,9 @@ def parse_args():
 
     # Training
     parser.add_argument("--epochs", type=int, default=3)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--seq-len", type=int, default=512)
-    parser.add_argument("--grad-accum", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--seq-len", type=int, default=None)
+    parser.add_argument("--grad-accum", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--warmup-steps", type=int, default=500)
     parser.add_argument("--weight-decay", type=float, default=0.1)
@@ -404,9 +408,34 @@ def parse_args():
     # Misc
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb", action="store_true", default=False)
-    parser.add_argument("--wandb-project", default="mamba3-380m")
+    parser.add_argument("--wandb-project", default="mamba3")
 
     args = parser.parse_args()
+
+    # Apply preset
+    from mamba3_ssm.presets import CONFIGS
+    if args.preset:
+        p = CONFIGS[args.preset]
+        args.d_model = p["d_model"]
+        args.n_layer = p["n_layer"]
+        args.d_state = p["d_state"]
+        args.batch_size = p["batch_size"]
+        args.seq_len = p["seq_len"]
+        args.grad_accum = p["grad_accum"]
+        print(f"Using preset '{args.preset}': {p['desc']}")
+
+    # Fill defaults for anything not set
+    if args.d_model is None:
+        args.d_model = 1536
+    if args.n_layer is None:
+        args.n_layer = 20
+    if args.batch_size is None:
+        args.batch_size = 1
+    if args.seq_len is None:
+        args.seq_len = 256
+    if args.grad_accum is None:
+        args.grad_accum = 16
+
     if args.no_mimo:
         args.is_mimo = False
     return args

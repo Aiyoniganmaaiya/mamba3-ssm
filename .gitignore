@@ -10,4 +10,13 @@ build/
 venv/
 *.egg
 .DS_Store
-.pypirc*
+
+# Data and checkpoints
+data/
+checkpoints/
+*.pt
+*.pth
+
+# Test files
+test_corpus.txt
+benchmark_vram.py
