@@ -1,6 +1,7 @@
 # Mamba-3: Improved Sequence Modeling using State Space Principles
 
-[![PyPI version](https://img.shields.io/pypi/v/mamba3-ssm.svg)](https://pypi.org/project/mamba3-ssm/)
+[![PyPI version](https://img.shields.io/pypi/v/mamba3-ssm.svg?color=blue)](https://pypi.org/project/mamba3-ssm/)
+**pip install:** `pip install mamba3-ssm` · **version:** 0.1.1
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/mamba3-ssm.svg)](https://pypi.org/project/mamba3-ssm/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
