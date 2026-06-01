@@ -42,9 +42,9 @@ Based on actual VRAM measurements (bf16 + AdamW):
 
 | Preset | Params | d_model | n_layer | d_state | batch | seq_len | VRAM | Status |
 |--------|--------|---------|---------|---------|-------|---------|------|--------|
-| `small` | 112M | 1024 | 16 | 64 | 2 | 512 | ~5.6GB | ✅ 舒适 |
-| `medium` | 306M | 1536 | 20 | 64 | 1 | 256 | ~7.2GB | ✅ 推荐 |
-| `large` | 367M | 1536 | 24 | 64 | 1 | 256 | ~8.6GB | ⚠️ 极限 |
+| `small` | 112M | 1024 | 16 | 64 | 2 | 512 | ~5.6GB | ✅ Comfortable |
+| `medium` | 306M | 1536 | 20 | 64 | 1 | 256 | ~7.2GB | ✅ Recommended |
+| `large` | 367M | 1536 | 24 | 64 | 1 | 256 | ~8.6GB | ⚠️ Tight |
 
 Effective batch size = batch × grad_accum (default grad_accum=16 for all presets).
 
