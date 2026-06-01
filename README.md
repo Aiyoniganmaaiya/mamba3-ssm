@@ -1,7 +1,7 @@
 # Mamba-3: Improved Sequence Modeling using State Space Principles
 
 [![PyPI version](https://img.shields.io/pypi/v/mamba3-ssm.svg?color=blue)](https://pypi.org/project/mamba3-ssm/)
-**pip install:** `pip install mamba3-ssm` · **version:** 0.1.1
+**pip install:** `pip install mamba3-ssm` · **version:** 0.1.2
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/mamba3-ssm.svg)](https://pypi.org/project/mamba3-ssm/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -203,6 +203,14 @@ einops>=0.7
 Optional: `datasets` for auto-downloading TinyStories/Wikitext, `wandb` for logging.
 
 ## Changelog
+
+### v0.1.2 (2026-05-31)
+- **Fix tokenizer cache loading bug**: `CharTokenizer.load()` passed entire dict instead of `data["chars"]`, causing vocab_size=1 on cached reload
+- **Fix steps_per_epoch calculation**: Was off by ~512x (used `len(dataset)` instead of `tokens // (seq_len * batch)`)
+- **Fix checkpoint resume**: All checkpoints (step_N.pt, best.pt, final.pt) now save complete state (model, optimizer, scaler, step, losses, config)
+- **Add `--max-steps` flag**: Override total steps for quick experiments
+- **Add `find_latest_checkpoint()`**: Auto-discover most recent checkpoint in save_dir
+- **Optimized SSM scan**: Pre-compute decay/trap factors outside loop, vectorize all inner ops
 
 ### v0.1.1 (2026-05-31)
 - Add `--preset` flag to train.py (small/medium/large) benchmarked on RTX 4060 8GB
