@@ -100,7 +100,8 @@ class CharTokenizer:
 
     @classmethod
     def load(cls, path):
-        return cls(chars=json.load(open(path, "r", encoding="utf-8")))
+        data = json.load(open(path, "r", encoding="utf-8"))
+        return cls(chars=data["chars"])
 
 
 class TextDataset:
@@ -208,14 +209,17 @@ def train(args):
     }[args.dataset]()
 
     n = int(0.95 * len(tokens))
+    train_tokens = len(tokens[:n])
     train_ds, val_ds = TextDataset(tokens[:n], args.seq_len), TextDataset(tokens[n:], args.seq_len)
     args.vocab_size = tokenizer.vocab_size
     eff_batch = args.batch_size * args.grad_accum
-    steps_per_epoch = len(train_ds) // eff_batch
-    total_steps = steps_per_epoch * args.epochs
+    # Each step consumes seq_len * eff_batch tokens
+    tokens_per_step = args.seq_len * eff_batch
+    steps_per_epoch = train_tokens // tokens_per_step
+    total_steps = args.max_steps if args.max_steps > 0 else steps_per_epoch * args.epochs
 
-    print(f"Train: {len(tokens[:n]):,} | Val: {len(tokens[n:]):,} | Vocab: {tokenizer.vocab_size}")
-    print(f"Steps/epoch: {steps_per_epoch} | Total: {total_steps} | Effective batch: {eff_batch}")
+    print(f"Train: {train_tokens:,} | Val: {len(tokens[n:]):,} | Vocab: {tokenizer.vocab_size}")
+    print(f"Steps/epoch: {steps_per_epoch} | Total: {total_steps} | Eff batch: {eff_batch} | Tokens/step: {tokens_per_step}")
 
     # Model
     config = MambaConfig(
@@ -426,6 +430,8 @@ def parse_args():
     p.add_argument("--data-dir", default="./data")
     p.add_argument("--data-path", default=None)
     p.add_argument("--epochs", type=int, default=3)
+    p.add_argument("--max-steps", type=int, default=0,
+                   help="Override total steps (0 = use epochs). Useful for quick experiments.")
     p.add_argument("--batch-size", type=int, default=None)
     p.add_argument("--seq-len", type=int, default=None)
     p.add_argument("--grad-accum", type=int, default=None)
