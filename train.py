@@ -4,16 +4,8 @@ train.py — Mamba-3 380M training script
 RTX 4060 Laptop 8GB VRAM targeted config.
 
 Usage:
-  # Quick test with custom text
+  python train.py --dataset tinystories --preset medium --epochs 3
   python train.py --dataset custom --data-path myfile.txt --epochs 1
-
-  # Train on TinyStories (auto-download)
-  python train.py --dataset tinystories --epochs 3
-
-  # Train on Wikitext-103
-  python train.py --dataset wikitext --epochs 3
-
-  # Resume from checkpoint
   python train.py --dataset tinystories --resume checkpoints/best.pt
 """
 
@@ -93,23 +85,15 @@ class TextDataset:
 
 
 def load_wikitext(data_dir="./data"):
-    """Download and process wikitext-103."""
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     cache = data_dir / "wikitext103_tokens.pt"
-
     if cache.exists():
-        print("Loading cached wikitext-103 tokens...")
         return torch.load(cache, weights_only=True), CharTokenizer.load(data_dir / "wikitext103_tokenizer.json")
-
-    try:
-        from datasets import load_dataset
-        print("Downloading wikitext-103...")
-        ds = load_dataset("wikitext", "wikitext-103-raw-v1")
-        text = "\n".join(ds["train"]["text"]) + "\n".join(ds["validation"]["text"])
-    except ImportError:
-        raise ImportError("'datasets' not installed. Run: pip install datasets")
-
+    from datasets import load_dataset
+    print("Downloading wikitext-103...")
+    ds = load_dataset("wikitext", "wikitext-103-raw-v1")
+    text = "\n".join(ds["train"]["text"]) + "\n".join(ds["validation"]["text"])
     tokenizer = CharTokenizer(text)
     tokenizer.save(data_dir / "wikitext103_tokenizer.json")
     tokens = torch.tensor(tokenizer.encode(text), dtype=torch.int32)
@@ -119,23 +103,15 @@ def load_wikitext(data_dir="./data"):
 
 
 def load_tinystories(data_dir="./data"):
-    """Download and process TinyStories."""
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     cache = data_dir / "tinystories_tokens.pt"
-
     if cache.exists():
-        print("Loading cached TinyStories tokens...")
         return torch.load(cache, weights_only=True), CharTokenizer.load(data_dir / "tinystories_tokenizer.json")
-
-    try:
-        from datasets import load_dataset
-        print("Downloading TinyStories...")
-        ds = load_dataset("roneneldan/TinyStories", split="train")
-        text = "\n\n".join(ds["text"][:50000])
-    except ImportError:
-        raise ImportError("'datasets' not installed. Run: pip install datasets")
-
+    from datasets import load_dataset
+    print("Downloading TinyStories...")
+    ds = load_dataset("roneneldan/TinyStories", split="train")
+    text = "\n\n".join(ds["text"][:50000])
     tokenizer = CharTokenizer(text)
     tokenizer.save(data_dir / "tinystories_tokenizer.json")
     tokens = torch.tensor(tokenizer.encode(text), dtype=torch.int32)
@@ -145,17 +121,13 @@ def load_tinystories(data_dir="./data"):
 
 
 def load_custom_file(data_path, data_dir="./data"):
-    """Load a custom text file."""
-    data_path = Path(data_path)
-    data_dir = Path(data_dir)
+    data_path, data_dir = Path(data_path), Path(data_dir)
     if not data_path.exists():
         raise FileNotFoundError(f"Data file not found: {data_path}")
-
     text = data_path.read_text(encoding="utf-8")
     tokenizer = CharTokenizer(text)
     data_dir.mkdir(parents=True, exist_ok=True)
     tokenizer.save(data_dir / f"{data_path.stem}_tokenizer.json")
-
     tokens = torch.tensor(tokenizer.encode(text), dtype=torch.int32)
     print(f"Custom data: {len(tokens):,} tokens, vocab={tokenizer.vocab_size}")
     return tokens, tokenizer
@@ -174,22 +146,22 @@ def cosine_warmup_lr(step, warmup_steps, total_steps, max_lr, min_lr=1e-5):
 
 def build_config(args):
     return MambaConfig(
-        d_model=args.d_model,
-        n_layer=args.n_layer,
-        vocab_size=args.vocab_size,
-        ssm_cfg={
-            "d_state": args.d_state,
-            "expand": args.expand,
-            "headdim": args.headdim,
-            "is_mimo": args.is_mimo,
-            "mimo_rank": args.mimo_rank,
-        },
-        d_intermediate=args.d_intermediate,
-        rms_norm=True,
-        residual_in_fp32=True,
-        pad_vocab_size_multiple=8,
-        tie_embeddings=True,
+        d_model=args.d_model, n_layer=args.n_layer, vocab_size=args.vocab_size,
+        ssm_cfg={"d_state": args.d_state, "expand": args.expand, "headdim": args.headdim,
+                 "is_mimo": args.is_mimo, "mimo_rank": args.mimo_rank},
+        d_intermediate=args.d_intermediate, rms_norm=True, residual_in_fp32=True,
+        pad_vocab_size_multiple=8, tie_embeddings=True,
     )
+
+
+def format_time(seconds):
+    """Format seconds into human readable string."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        return f"{seconds/60:.1f}m"
+    else:
+        return f"{seconds/3600:.1f}h"
 
 
 def train(args):
@@ -203,33 +175,35 @@ def train(args):
     if device.type == "cuda":
         free, total = torch.cuda.mem_get_info()
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"VRAM: {total / 1e9:.1f} GB total, {free / 1e9:.1f} GB free")
+        print(f"VRAM: {total/1e9:.1f}GB total, {free/1e9:.1f}GB free")
 
     # Data
     print(f"\nLoading dataset: {args.dataset}")
-    if args.dataset == "wikitext":
-        tokens, tokenizer = load_wikitext(args.data_dir)
-    elif args.dataset == "tinystories":
-        tokens, tokenizer = load_tinystories(args.data_dir)
-    elif args.dataset == "custom":
-        tokens, tokenizer = load_custom_file(args.data_path, args.data_dir)
-    else:
-        raise ValueError(f"Unknown dataset: {args.dataset}")
+    loaders = {
+        "wikitext": lambda: load_wikitext(args.data_dir),
+        "tinystories": lambda: load_tinystories(args.data_dir),
+        "custom": lambda: load_custom_file(args.data_path, args.data_dir),
+    }
+    tokens, tokenizer = loaders[args.dataset]()
 
     n = int(0.95 * len(tokens))
     train_ds = TextDataset(tokens[:n], args.seq_len)
     val_ds = TextDataset(tokens[n:], args.seq_len)
     args.vocab_size = tokenizer.vocab_size
-    print(f"Train tokens: {len(tokens[:n]):,} | Val tokens: {len(tokens[n:]):,}")
+    effective_batch = args.batch_size * args.grad_accum
+    steps_per_epoch = len(train_ds) // effective_batch
+    total_steps = steps_per_epoch * args.epochs
+    total_tokens = len(tokens[:n])
+
+    print(f"Train: {total_tokens:,} tokens | Val: {len(tokens[n:]):,} tokens")
+    print(f"Vocab: {tokenizer.vocab_size} | Steps/epoch: {steps_per_epoch} | Total steps: {total_steps}")
 
     # Model
     config = build_config(args)
     model = MambaLMHeadModel(config).to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    vram_est = total_params * 12 / 1e9
     print(f"\nModel: d_model={args.d_model} n_layer={args.n_layer} d_state={args.d_state} MIMO={args.is_mimo}")
     print(f"Parameters: {total_params:,} ({total_params/1e6:.0f}M)")
-    print(f"Est VRAM: ~{vram_est:.1f} GB")
 
     # Optimizer
     no_decay = {"bias", "norm", "B_bias", "C_bias", "dt_bias", "D", "B_norm", "C_norm", "norm_f"}
@@ -242,11 +216,13 @@ def train(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.learning_rate, betas=(0.9, 0.95))
 
     start_step = 0
+    global_step = 0
     if args.resume and Path(args.resume).exists():
         ckpt = torch.load(args.resume, map_location=device, weights_only=False)
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
         start_step = ckpt.get("step", 0)
+        global_step = start_step
         print(f"Resumed from step {start_step}")
 
     # W&B
@@ -258,31 +234,33 @@ def train(args):
         except ImportError:
             use_wandb = False
 
-    # Training loop
+    # ── Training header ───────────────────────────────────────────────────
+    print(f"\n{'='*70}")
+    print(f"Training: batch={args.batch_size} grad_accum={args.grad_accum} effective_batch={effective_batch}")
+    print(f"seq_len={args.seq_len} lr={args.learning_rate} warmup={args.warmup_steps}")
+    print(f"save_every={args.save_every} log_every={args.log_interval} eval_every={args.eval_interval}")
+    print(f"{'='*70}\n")
+
     model.train()
-    global_step = start_step
     best_val_loss = float("inf")
-    effective_batch = args.batch_size * args.grad_accum
-    steps_per_epoch = len(train_ds) // effective_batch
-    total_steps = steps_per_epoch * args.epochs
-
-    print(f"\nTraining: batch={args.batch_size}x{args.grad_accum}={effective_batch} seq_len={args.seq_len}")
-    print(f"LR={args.learning_rate} warmup={args.warmup_steps} total_steps={total_steps}")
-    print()
-
     scaler = torch.amp.GradScaler("cuda")
+    train_start = time.time()
+    step_times = []
 
     for epoch in range(args.epochs):
         epoch_start = time.time()
+        epoch_tokens = 0
         running_loss = 0.0
         optimizer.zero_grad()
 
         for step_in_epoch in range(steps_per_epoch):
+            step_t0 = time.time()
             accum_loss = 0.0
 
             for _ in range(args.grad_accum):
                 xb, yb = train_ds.sample_batch(args.batch_size)
                 xb, yb = xb.to(device), yb.to(device)
+                epoch_tokens += xb.numel()
 
                 with torch.amp.autocast("cuda", dtype=torch.bfloat16):
                     logits = model(xb)
@@ -293,26 +271,64 @@ def train(args):
 
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-
-            # LR
             lr = cosine_warmup_lr(global_step, args.warmup_steps, total_steps, args.learning_rate)
             for pg in optimizer.param_groups:
                 pg["lr"] = lr
-
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
+
             global_step += 1
             running_loss += accum_loss
+            step_times.append(time.time() - step_t0)
+            if len(step_times) > 100:
+                step_times.pop(0)
 
+            # ── Periodic logging (every log_interval steps) ────────────────
             if global_step % args.log_interval == 0:
+                elapsed = time.time() - train_start
+                avg_step_time = sum(step_times) / len(step_times) if step_times else 0
+                tokens_per_sec = epoch_tokens / max(time.time() - epoch_start, 1e-6)
                 avg_loss = running_loss / args.log_interval
                 ppl = math.exp(min(avg_loss, 10))
-                print(f"  Step {global_step:>6} | epoch {epoch+1}/{args.epochs} | loss {avg_loss:.4f} | ppl {ppl:.1f} | lr {lr:.2e}")
+
+                # ETA estimation
+                steps_done = global_step - start_step
+                steps_remaining = total_steps - steps_done
+                eta_seconds = avg_step_time * steps_remaining if avg_step_time > 0 else 0
+                progress_pct = steps_done / max(total_steps, 1) * 100
+
+                print(
+                    f"  [{global_step:>6}/{total_steps}] "
+                    f"epoch={epoch+1}/{args.epochs} "
+                    f"loss={avg_loss:.4f} ppl={ppl:.1f} "
+                    f"lr={lr:.2e} "
+                    f"tok/s={tokens_per_sec:.0f} "
+                    f"progress={progress_pct:.1f}% "
+                    f"elapsed={format_time(elapsed)} "
+                    f"eta={format_time(eta_seconds)}"
+                )
+
                 if use_wandb:
-                    wandb.log({"train/loss": avg_loss, "train/ppl": ppl, "train/lr": lr, "step": global_step})
+                    wandb.log({"train/loss": avg_loss, "train/ppl": ppl, "train/lr": lr,
+                               "train/tok_per_sec": tokens_per_sec, "step": global_step})
                 running_loss = 0.0
 
+            # ── Save checkpoint (every save_every steps) ──────────────────
+            if args.save_every and global_step % args.save_every == 0:
+                ckpt_path = Path(args.save_dir) / f"step_{global_step}.pt"
+                ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save({
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "step": global_step,
+                    "val_loss": best_val_loss,
+                    "train_loss": running_loss,
+                    "config": vars(args),
+                }, ckpt_path)
+                print(f"  >> Saved checkpoint: {ckpt_path.name}")
+
+            # ── Validation (every eval_interval steps) ────────────────────
             if global_step % args.eval_interval == 0:
                 model.eval()
                 val_losses = []
@@ -326,26 +342,46 @@ def train(args):
                         val_losses.append(vloss.item())
                 val_loss = sum(val_losses) / len(val_losses)
                 val_ppl = math.exp(min(val_loss, 10))
-                print(f"\n  ═══ Val: loss={val_loss:.4f} ppl={val_ppl:.1f} ═══\n")
+
+                print(f"\n  {'═'*60}")
+                print(f"  Validation @ step {global_step}: loss={val_loss:.4f} ppl={val_ppl:.1f}")
+                print(f"  {'═'*60}\n")
+
+                if use_wandb:
+                    wandb.log({"val/loss": val_loss, "val/ppl": val_ppl, "step": global_step})
+
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
-                    ckpt_path = Path(args.save_dir) / "best.pt"
-                    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-                    torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                                "step": global_step, "val_loss": val_loss, "config": vars(args)}, ckpt_path)
-                    print(f"  Saved best checkpoint (val_loss={val_loss:.4f})")
+                    best_path = Path(args.save_dir) / "best.pt"
+                    torch.save({
+                        "model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                        "step": global_step, "val_loss": val_loss, "config": vars(args),
+                    }, best_path)
+                    print(f"  >> New best! Saved: {best_path}\n")
                 model.train()
 
-        print(f"\nEpoch {epoch+1}/{args.epochs} done in {time.time() - epoch_start:.1f}s\n")
+        epoch_time = time.time() - epoch_start
+        print(f"\nEpoch {epoch+1}/{args.epochs} done in {format_time(epoch_time)} "
+              f"({epoch_tokens/epoch_time:.0f} tok/s avg)\n")
 
-    # Final save
+    # ── Final save ─────────────────────────────────────────────────────────
     final_path = Path(args.save_dir) / "final.pt"
-    torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                "step": global_step, "val_loss": best_val_loss, "config": vars(args)}, final_path)
-    print(f"Saved: {final_path}")
+    torch.save({
+        "model": model.state_dict(), "optimizer": optimizer.state_dict(),
+        "step": global_step, "val_loss": best_val_loss, "config": vars(args),
+    }, final_path)
 
-    # Generate samples
-    print("\n" + "=" * 60 + "\nGeneration samples\n" + "=" * 60)
+    total_time = time.time() - train_start
+    print(f"\n{'='*70}")
+    print(f"Training complete!")
+    print(f"  Total time: {format_time(total_time)}")
+    print(f"  Steps: {global_step}")
+    print(f"  Best val loss: {best_val_loss:.4f}")
+    print(f"  Final checkpoint: {final_path}")
+    print(f"{'═'*70}\n")
+
+    # ── Generate samples ──────────────────────────────────────────────────
+    print("Generation samples\n" + "="*60)
     model.eval()
     for temp in [0.5, 0.8, 1.0]:
         with torch.no_grad():
@@ -359,17 +395,15 @@ def train(args):
                     generated = torch.cat([generated, next_token], dim=1)
             print(f"\n[temp={temp}]\n{tokenizer.decode(generated[0].cpu().tolist())[:200]}...")
 
-    print(f"\nDone! Best val loss: {best_val_loss:.4f}")
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Mamba-3 on RTX 4060 Laptop 8GB")
 
-    # Preset configs (based on actual VRAM benchmarks)
-    parser.add_argument("--preset", choices=["small", "medium", "large", "380m"],
-                        default=None, help="Use a benchmarked preset: small(112M), medium(306M), large(367M), 380m(original 387M)")
+    # Presets
+    parser.add_argument("--preset", choices=["small", "medium", "large"],
+                        default=None, help="small(112M,bs2,sl512) medium(306M,bs1,sl256) large(367M,bs1,sl256)")
 
-    # Model (defaults = medium preset)
+    # Model
     parser.add_argument("--d-model", type=int, default=None)
     parser.add_argument("--n-layer", type=int, default=None)
     parser.add_argument("--d-state", type=int, default=64)
@@ -396,9 +430,10 @@ def parse_args():
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--vocab-size", type=int, default=256)
 
-    # Logging
-    parser.add_argument("--log-interval", type=int, default=50)
-    parser.add_argument("--eval-interval", type=int, default=500)
+    # Logging & checkpointing
+    parser.add_argument("--log-interval", type=int, default=50, help="Print loss every N steps")
+    parser.add_argument("--save-every", type=int, default=500, help="Save checkpoint every N steps (0=disabled)")
+    parser.add_argument("--eval-interval", type=int, default=500, help="Run validation every N steps (0=disabled)")
     parser.add_argument("--eval-steps", type=int, default=20)
 
     # Checkpoint
@@ -424,17 +459,12 @@ def parse_args():
         args.grad_accum = p["grad_accum"]
         print(f"Using preset '{args.preset}': {p['desc']}")
 
-    # Fill defaults for anything not set
-    if args.d_model is None:
-        args.d_model = 1536
-    if args.n_layer is None:
-        args.n_layer = 20
-    if args.batch_size is None:
-        args.batch_size = 1
-    if args.seq_len is None:
-        args.seq_len = 256
-    if args.grad_accum is None:
-        args.grad_accum = 16
+    # Defaults
+    if args.d_model is None: args.d_model = 1536
+    if args.n_layer is None: args.n_layer = 20
+    if args.batch_size is None: args.batch_size = 1
+    if args.seq_len is None: args.seq_len = 256
+    if args.grad_accum is None: args.grad_accum = 16
 
     if args.no_mimo:
         args.is_mimo = False
