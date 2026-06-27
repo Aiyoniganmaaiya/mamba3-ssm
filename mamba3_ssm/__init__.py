@@ -1,7 +1,8 @@
 """
-Mambo-3: Improved Sequence Modeling using State Space Principles
+Mamba-3 v0.2.0: Improved Sequence Modeling using State Space Principles
 
-Clean PyTorch implementation of the Mamba-3 SSM architecture.
+CUDA-accelerated SSM scans with Python fallback.
+Fixes double-sigmoid bug and lm_head dimension swap.
 Paper: https://arxiv.org/abs/2603.15569
 """
 

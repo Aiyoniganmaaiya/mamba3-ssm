@@ -208,8 +208,8 @@ class Mamba3(nn.Module):
         DT = F.softplus(dd_dt.float() + self.dt_bias)             # (B, L, H), positive
         ADT = A * DT                                               # (B, L, H)
 
-        # ── Step 4: Trapezoidal gate ──────────────────────────────────────
-        trap = torch.sigmoid(trap_raw.float())  # (B, L, H), in [0, 1]
+        # ── Step 4: Trapezoidal gate (sigmoid applied inside scan op) ────
+        trap = trap_raw.float()  # (B, L, H), raw logit, sigmoid in scan
 
         # ── Step 5: B/C → RMSNorm → expand groups → add bias ─────────────
         B_normed = self.B_norm(B_raw.float())   # (B, L, R, G, D)
@@ -317,7 +317,7 @@ class Mamba3(nn.Module):
         A = -F.softplus(dd_A.float()).clamp(max=-self.A_floor)
         DT = F.softplus(dd_dt.float() + self.dt_bias)
         ADT = A * DT
-        trap = torch.sigmoid(trap_raw.float())
+        trap = torch.sigmoid(trap_raw.float())  # step uses trap directly (no scan op)
 
         # RMSNorm + expand + bias
         B_normed = self.B_norm(B_raw.float())

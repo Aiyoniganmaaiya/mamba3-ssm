@@ -85,8 +85,8 @@ class MambaLMHeadModel(nn.Module):
             self.mlp_layers = None
 
         self.norm_f = RMSNorm(config.d_model)
-        # LM head: projects from vocab_size to d_model (tied with embedding)
-        self.lm_head = nn.Linear(vocab_size, config.d_model, bias=False, **factory)
+        # LM head: projects from d_model to vocab_size (tied with embedding)
+        self.lm_head = nn.Linear(config.d_model, vocab_size, bias=False, **factory)
         if config.tie_embeddings:
             self.lm_head.weight = self.embedding.weight
 
