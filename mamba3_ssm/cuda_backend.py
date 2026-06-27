@@ -404,14 +404,14 @@ def siso_scan_cuda(
     if mod is None:
         return None
 
-    # Ensure contiguous
-    x = x.contiguous()
-    B_proj = B_proj.contiguous()
-    C_proj = C_proj.contiguous()
-    decay = decay.contiguous()
-    dt = dt.contiguous()
-    tr = tr.contiguous()
-    D_param = D_param.contiguous()
+    # Ensure contiguous + float32 (CUDA kernel uses float* pointers)
+    x = x.contiguous().float()
+    B_proj = B_proj.contiguous().float()
+    C_proj = C_proj.contiguous().float()
+    decay = decay.contiguous().float()
+    dt = dt.contiguous().float()
+    tr = tr.contiguous().float()
+    D_param = D_param.contiguous().float()
 
     return mod.siso_scan(x, B_proj, C_proj, decay, dt, tr, D_param)
 
@@ -439,16 +439,17 @@ def mimo_state_cuda(
     if mod is None:
         return None
 
-    # Step 1: pre-mix x with mimo_x
-    x_mixed = torch.einsum("blhp,hrp->blhr", x.float(), mimo_x.float())
+    # Step 1: pre-mix x with mimo_x (avoid autocast overriding dtype)
+    with torch.amp.autocast('cuda', enabled=False):
+        x_mixed = torch.einsum("blhp,hrp->blhr", x.float(), mimo_x.float())
 
-    # Step 2: CUDA state kernel
-    B_proj = B_proj.contiguous()
-    C_proj = C_proj.contiguous()
-    decay = decay.contiguous()
-    dt = dt.contiguous()
-    tr = tr.contiguous()
-    D_param = D_param.contiguous()
+    # Step 2: CUDA state kernel (float32 required)
+    B_proj = B_proj.contiguous().float()
+    C_proj = C_proj.contiguous().float()
+    decay = decay.contiguous().float()
+    dt = dt.contiguous().float()
+    tr = tr.contiguous().float()
+    D_param = D_param.contiguous().float()
 
     y_r = mod.mimo_state(x_mixed, B_proj, C_proj, decay, dt, tr, D_param, R)
 
@@ -456,6 +457,7 @@ def mimo_state_cuda(
     skip = D_param.unsqueeze(0).unsqueeze(0).unsqueeze(-1) * x_mixed  # (B, L, H, R)
     y_pre = y_r + skip
 
-    # Step 3: post-mix with mimo_o
-    y_out = torch.einsum("blhr,hrp->blhp", y_pre, mimo_o.float())
+    # Step 3: post-mix with mimo_o (avoid autocast overriding dtype)
+    with torch.amp.autocast('cuda', enabled=False):
+        y_out = torch.einsum("blhr,hrp->blhp", y_pre, mimo_o.float())
     return y_out.to(x.dtype)
