@@ -5,7 +5,7 @@ Building blocks for stacking Mamba-3 layers into a full model:
   - Embed / LMHead: Token embedding and language-model head
 """
 
-from typing import Optional
+from typing import Optional, List, Tuple
 
 import torch
 import torch.nn as nn
@@ -99,3 +99,41 @@ class MambaLMHeadModel(nn.Module):
                 x = x + self.mlp_layers[i](self.mlp_norms[i](x))
         x = self.norm_f(x)
         return self.lm_head(x)
+
+    def allocate_inference_cache(self, batch_size: int) -> List[Tuple[torch.Tensor, ...]]:
+        """Allocate per-layer states for autoregressive decoding.
+
+        Returns a list of (angle_state, ssm_state, bx_prev) tuples, one per layer.
+        """
+        return [layer.mixer.allocate_inference_cache(batch_size) for layer in self.layers]
+
+    def step(
+        self, input_ids: torch.Tensor,
+        cache: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]]:
+        """Process a single token through all layers.
+
+        Args:
+            input_ids: (batch,) or (batch, 1) — current token
+            cache: per-layer (angle_state, ssm_state, bx_prev)
+
+        Returns:
+            logits: (batch, vocab_size)
+            cache: updated per-layer states
+        """
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(-1)
+        x = self.embedding(input_ids)  # (B, 1, d_model)
+        x = x.squeeze(1)               # (B, d_model)
+        new_cache = []
+        for i, block in enumerate(self.layers):
+            mix_in = block.mixer
+            x_in = block.norm(x)
+            out, a, s, b = mix_in.step(x_in, *cache[i])
+            x = x + out
+            new_cache.append((a, s, b))
+            if self.mlp_layers is not None:
+                x = x + self.mlp_layers[i](self.mlp_norms[i](x))
+        x = self.norm_f(x)
+        logits = self.lm_head(x)  # (B, vocab_size)
+        return logits, new_cache

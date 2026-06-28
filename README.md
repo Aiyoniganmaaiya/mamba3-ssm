@@ -37,20 +37,51 @@ logits = lm(torch.randint(0, 50000, (1, 512)))
 ## Training
 
 ```bash
-# Train on TinyStories with preset config
+# Train on TinyStories with preset config (char-level tokenizer)
 python train.py --dataset tinystories --preset small --epochs 3
+
+# Train with BPE tokenizer (better quality, requires: pip install tokenizers)
+python train.py --dataset tinystories --preset small --epochs 3 --bpe
 
 # Custom data
 python train.py --dataset custom --data-path myfile.txt --preset medium --epochs 1
 
 # Resume from checkpoint
 python train.py --dataset tinystories --resume checkpoints/best.pt
-
-# Generate text from trained model
-python generate.py --checkpoint checkpoints/best.pt --prompt "Once upon a time"
 ```
 
 Available presets: `small` (112M, seq=512), `medium` (306M, seq=256), `large` (367M, seq=256). See `mamba3_ssm/presets.py` for details.
+
+## Generation
+
+Generate text from a trained checkpoint using **incremental decode** (O(L) per step, much faster than full forward):
+
+```bash
+python generate.py --checkpoint checkpoints/best.pt --prompt "Once upon a time"
+python generate.py --checkpoint checkpoints/best.pt --prompt "Hello" --max-tokens 500 --temperature 0.7
+```
+
+The generator automatically detects whether a char-level or BPE tokenizer was used during training.
+
+For programmatic generation with a trained model:
+
+```python
+from mamba3_ssm import MambaLMHeadModel, MambaConfig
+
+ckpt = torch.load("checkpoints/best.pt", map_location="cpu")
+config = MambaConfig(**ckpt["config"])
+model = MambaLMHeadModel(config)
+model.load_state_dict(ckpt["model"])
+model = model.cuda().eval()
+
+cache = model.allocate_inference_cache(1)
+logits, cache = model.step(torch.tensor([[42]], device="cuda"), cache)
+
+for _ in range(200):
+    probs = torch.softmax(logits / 0.8, dim=-1)
+    tok = torch.multinomial(probs, 1)
+    logits, cache = model.step(tok, cache)
+```
 
 ## Performance
 
@@ -140,14 +171,23 @@ To compile the CUDA kernel, install Visual Studio Build Tools with MSVC and run 
 | `d_intermediate` | 0 | SwiGLU MLP (0 = disabled) |
 | `tie_embeddings` | True | Tie LM head to embedding |
 
+| Method | Description |
+|--------|-------------|
+| `forward(input_ids)` | `(B, L)` → `(B, L, vocab_size)` logits |
+| `step(input_ids, cache)` | Single-token decode: `(B,)` → `(B, vocab_size)` logits + updated cache |
+| `allocate_inference_cache(B)` | Returns per-layer `(angle_state, ssm_state, bx_prev)` list |
+
 ### Exports
 
 ```python
 from mamba3_ssm import (
     Mamba3, MambaLMHeadModel, MambaConfig, SSMConfig,
     RMSNorm, apply_rope, ssm_scan_siso, ssm_scan_mimo,
-    CONFIGS,
+    CONFIGS, CharTokenizer, BPETokenizer, load_tokenizer,
 )
+
+# Tokenizer
+from mamba3_ssm.tokenizer import CharTokenizer, BPETokenizer, load_tokenizer
 ```
 
 ## Testing
@@ -166,6 +206,7 @@ mamba3_ssm/
 ├── config.py        # MambaConfig / SSMConfig
 ├── ops.py           # RMSNorm, RoPE, SSM scans (CUDA/JIT/Python)
 ├── cuda_backend.py  # CUDA kernel compilation + Python wrappers
+├── tokenizer.py     # CharTokenizer and BPETokenizer
 ├── layer.py         # Mamba3 module (forward + step)
 ├── block.py         # MambaBlock, MambaLMHeadModel
 ├── presets.py       # RTX 4060 benchmarked configs
@@ -180,9 +221,15 @@ torch>=2.0
 einops>=0.7
 ```
 
-Optional: `datasets` for auto-downloading TinyStories/Wikitext, `wandb` for logging.
+Optional: `datasets` for auto-downloading TinyStories/Wikitext, `wandb` for logging, `tokenizers` for BPE tokenizer support.
 
 ## Changelog
+
+### Unreleased
+- **`MambaLMHeadModel.step()`**: Added incremental decode method — O(L) per step instead of O(L²) full forward
+- **`MambaLMHeadModel.allocate_inference_cache()`**: Allocate per-layer states for autoregressive generation
+- **BPE tokenizer**: Train with `--bpe` flag; `BPETokenizer` class backed by HuggingFace `tokenizers` library
+- **`generate.py` rewritten**: Uses `model.step()` for efficient autoregressive generation; auto-detects char/BPE tokenizer
 
 ### v0.2.1 (2026-06-28)
 - **Fix autocast dtype override**: MIMO CUDA einsum pre/post-mix now wrapped in `autocast(enabled=False)` to prevent bf16 autocast from overriding float32 tensors

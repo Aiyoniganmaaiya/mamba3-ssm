@@ -11,6 +11,7 @@ from .layer import Mamba3
 from .block import MambaLMHeadModel, MambaBlock
 from .ops import RMSNorm, apply_rope, ssm_scan_siso, ssm_scan_mimo
 from .presets import CONFIGS
+from .tokenizer import CharTokenizer, BPETokenizer, load_tokenizer
 
 __all__ = [
     "MambaConfig",
@@ -23,4 +24,7 @@ __all__ = [
     "ssm_scan_siso",
     "ssm_scan_mimo",
     "CONFIGS",
+    "CharTokenizer",
+    "BPETokenizer",
+    "load_tokenizer",
 ]

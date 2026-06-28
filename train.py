@@ -22,6 +22,7 @@ import torch
 import torch.nn.functional as F
 
 from mamba3_ssm import MambaLMHeadModel, MambaConfig
+from mamba3_ssm.tokenizer import CharTokenizer, BPETokenizer, load_tokenizer
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -76,32 +77,8 @@ def find_latest_checkpoint(save_dir):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Dataset
+# Tokenizer — CharTokenizer is now in mamba3_ssm/tokenizer.py
 # ══════════════════════════════════════════════════════════════════════════════
-
-class CharTokenizer:
-    def __init__(self, text=None, chars=None):
-        if chars:
-            self.chars = sorted(set(chars))
-        elif text:
-            self.chars = sorted(set(text))
-        else:
-            raise ValueError("Need text or chars")
-        self.stoi = {c: i for i, c in enumerate(self.chars)}
-        self.itos = {i: c for c, i in self.stoi.items()}
-        self.vocab_size = len(self.chars)
-
-    def encode(self, s): return [self.stoi.get(c, 0) for c in s]
-    def decode(self, ids): return ''.join([self.itos.get(i, '') for i in ids])
-
-    def save(self, path):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        json.dump({"chars": self.chars}, open(path, "w", encoding="utf-8"))
-
-    @classmethod
-    def load(cls, path):
-        data = json.load(open(path, "r", encoding="utf-8"))
-        return cls(chars=data["chars"])
 
 
 class TextDataset:
@@ -123,50 +100,77 @@ class TextDataset:
         )
 
 
-def load_wikitext(data_dir="./data"):
+def _make_tokenizer(texts, tok_type, tok_path, vocab_size, name):
+    """Train or load a tokenizer. tok_type: 'char' or 'bpe'."""
+    tok_path = Path(tok_path)
+    if tok_path.exists():
+        if tok_type == "bpe":
+            tok = BPETokenizer.load(tok_path)
+        else:
+            tok = CharTokenizer.load(tok_path)
+        print(f"{name}: loaded {tok_type} tokenizer ({tok.vocab_size} tokens)")
+        return tok
+    if tok_type == "bpe":
+        tok = BPETokenizer(vocab_size=vocab_size)
+        tok.train(texts)
+    else:
+        tok = CharTokenizer("".join(texts))
+    tok_path.parent.mkdir(parents=True, exist_ok=True)
+    tok.save(tok_path)
+    print(f"{name}: trained {tok_type} tokenizer ({tok.vocab_size} tokens)")
+    return tok
+
+
+def load_wikitext(data_dir="./data", tok_type="char", bpe_vocab=8192):
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     cache = data_dir / "wikitext103_tokens.pt"
-    tok_path = data_dir / "wikitext103_tokenizer.json"
+    tok_path = data_dir / f"wikitext103_tokenizer_{tok_type}.json"
     if cache.exists():
-        return torch.load(cache, weights_only=True), CharTokenizer.load(tok_path)
+        tok = _make_tokenizer([], tok_type, tok_path, bpe_vocab, "Wikitext-103")
+        tokens = torch.load(cache, weights_only=True)
+        return tokens, tok
     from datasets import load_dataset
     print("Downloading wikitext-103...")
     ds = load_dataset("wikitext", "wikitext-103-raw-v1")
-    text = "\n".join(ds["train"]["text"]) + "\n".join(ds["validation"]["text"])
-    tok = CharTokenizer(text); tok.save(tok_path)
-    tokens = torch.tensor(tok.encode(text), dtype=torch.int32)
+    texts = list(ds["train"]["text"]) + list(ds["validation"]["text"])
+    full_text = "\n".join(texts)
+    tok = _make_tokenizer(texts, tok_type, tok_path, bpe_vocab, "Wikitext-103")
+    tokens = torch.tensor(tok.encode(full_text), dtype=torch.int32)
     torch.save(tokens, cache)
     print(f"Wikitext-103: {len(tokens):,} tokens, vocab={tok.vocab_size}")
     return tokens, tok
 
 
-def load_tinystories(data_dir="./data"):
+def load_tinystories(data_dir="./data", tok_type="char", bpe_vocab=8192):
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     cache = data_dir / "tinystories_tokens.pt"
-    tok_path = data_dir / "tinystories_tokenizer.json"
+    tok_path = data_dir / f"tinystories_tokenizer_{tok_type}.json"
     if cache.exists():
-        return torch.load(cache, weights_only=True), CharTokenizer.load(tok_path)
+        tok = _make_tokenizer([], tok_type, tok_path, bpe_vocab, "TinyStories")
+        tokens = torch.load(cache, weights_only=True)
+        return tokens, tok
     from datasets import load_dataset
     print("Downloading TinyStories...")
     ds = load_dataset("roneneldan/TinyStories", split="train")
-    text = "\n\n".join(ds["text"][:50000])
-    tok = CharTokenizer(text); tok.save(tok_path)
-    tokens = torch.tensor(tok.encode(text), dtype=torch.int32)
+    texts = ds["text"][:50000]
+    full_text = "\n\n".join(texts)
+    tok = _make_tokenizer(texts, tok_type, tok_path, bpe_vocab, "TinyStories")
+    tokens = torch.tensor(tok.encode(full_text), dtype=torch.int32)
     torch.save(tokens, cache)
     print(f"TinyStories: {len(tokens):,} tokens, vocab={tok.vocab_size}")
     return tokens, tok
 
 
-def load_custom_file(data_path, data_dir="./data"):
+def load_custom_file(data_path, data_dir="./data", tok_type="char", bpe_vocab=8192):
     data_path, data_dir = Path(data_path), Path(data_dir)
     if not data_path.exists():
         raise FileNotFoundError(f"Not found: {data_path}")
     text = data_path.read_text(encoding="utf-8")
-    tok = CharTokenizer(text)
+    tok_path = data_dir / f"{data_path.stem}_tokenizer_{tok_type}.json"
+    tok = _make_tokenizer([text], tok_type, tok_path, bpe_vocab, "Custom")
     data_dir.mkdir(parents=True, exist_ok=True)
-    tok.save(data_dir / f"{data_path.stem}_tokenizer.json")
     tokens = torch.tensor(tok.encode(text), dtype=torch.int32)
     print(f"Custom: {len(tokens):,} tokens, vocab={tok.vocab_size}")
     return tokens, tok
@@ -202,10 +206,11 @@ def train(args):
 
     # Data
     print(f"\nLoading: {args.dataset}")
+    tok_type = "bpe" if args.bpe else "char"
     tokens, tokenizer = {
-        "wikitext": lambda: load_wikitext(args.data_dir),
-        "tinystories": lambda: load_tinystories(args.data_dir),
-        "custom": lambda: load_custom_file(args.data_path, args.data_dir),
+        "wikitext": lambda: load_wikitext(args.data_dir, tok_type, args.bpe_vocab),
+        "tinystories": lambda: load_tinystories(args.data_dir, tok_type, args.bpe_vocab),
+        "custom": lambda: load_custom_file(args.data_path, args.data_dir, tok_type, args.bpe_vocab),
     }[args.dataset]()
 
     n = int(0.95 * len(tokens))
@@ -440,6 +445,10 @@ def parse_args():
     p.add_argument("--weight-decay", type=float, default=0.1)
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--vocab-size", type=int, default=256)
+    p.add_argument("--bpe", action="store_true", default=False,
+                   help="Use BPE tokenizer instead of char-level")
+    p.add_argument("--bpe-vocab", type=int, default=8192,
+                   help="BPE vocabulary size (default: 8192)")
     p.add_argument("--log-interval", type=int, default=50)
     p.add_argument("--save-every", type=int, default=500)
     p.add_argument("--eval-interval", type=int, default=500)
