@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="mamba3-ssm",
-    version="0.2.0",
+    version="0.2.1",
     description="Mamba-3: Improved Sequence Modeling using State Space Principles",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",

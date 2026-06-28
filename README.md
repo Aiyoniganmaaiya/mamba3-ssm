@@ -1,7 +1,7 @@
 # Mamba-3: Improved Sequence Modeling using State Space Principles
 
 [![PyPI version](https://img.shields.io/pypi/v/mamba3-ssm.svg?color=blue)](https://pypi.org/project/mamba3-ssm/)
-**pip install:** `pip install mamba3-ssm` · **version:** 0.2.0
+**pip install:** `pip install mamba3-ssm` · **version:** 0.2.1
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/mamba3-ssm.svg)](https://pypi.org/project/mamba3-ssm/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -183,6 +183,10 @@ einops>=0.7
 Optional: `datasets` for auto-downloading TinyStories/Wikitext, `wandb` for logging.
 
 ## Changelog
+
+### v0.2.1 (2026-06-28)
+- **Fix autocast dtype override**: MIMO CUDA einsum pre/post-mix now wrapped in `autocast(enabled=False)` to prevent bf16 autocast from overriding float32 tensors
+- **Benchmark training times**: Added measured throughput for all three presets on RTX 4060 (small: 4.5h, medium: 19h, large: 22h for TinyStories×3ep)
 
 ### v0.2.0 (2026-06-28)
 - **CUDA-accelerated SSM scan**: Fused SISO kernel (50× speedup); MIMO split kernel
