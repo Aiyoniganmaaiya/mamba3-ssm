@@ -34,6 +34,24 @@ lm = MambaLMHeadModel(cfg)
 logits = lm(torch.randint(0, 50000, (1, 512)))
 ```
 
+## Training
+
+```bash
+# Train on TinyStories with preset config
+python train.py --dataset tinystories --preset small --epochs 3
+
+# Custom data
+python train.py --dataset custom --data-path myfile.txt --preset medium --epochs 1
+
+# Resume from checkpoint
+python train.py --dataset tinystories --resume checkpoints/best.pt
+
+# Generate text from trained model
+python generate.py --checkpoint checkpoints/best.pt --prompt "Once upon a time"
+```
+
+Available presets: `small` (112M, seq=512), `medium` (306M, seq=256), `large` (367M, seq=256). See `mamba3_ssm/presets.py` for details.
+
 ## Performance
 
 ### Acceleration Tiers
@@ -48,15 +66,15 @@ The SSM scan — the core bottleneck — uses a tiered acceleration strategy:
 
 ### Training Estimates (CUDA + JIT, RTX 4060 8GB Laptop)
 
-Using the CUDA-accelerated SISO scan (MIMO falls back to JIT):
+SSM scan accelerated with CUDA SISO kernel (50× speedup) and JIT MIMO fallback:
 
-| Preset | Params | Time/micro-batch | TinyStories×3ep |
-|--------|--------|-----------------|-----------------|
-| small (SISO) | 112M | ~27 s | ~1035 h |
-| medium (MIMO) | 306M | ~11 s | ~1624 h |
-| large (MIMO) | 367M | ~11 s | ~1770 h |
+| Preset | Params | Seq | VRAM | Micro-batch | Tok/s | Steps/ep | TinyStories×3ep |
+|--------|--------|-----|------|-------------|-------|----------|-----------------|
+| small | 112M | 512 | ~5.6GB | 117 ms | 8,780 | 5,798 | **~4 h 30 m** |
+| medium | 306M | 256 | ~7.2GB | 125 ms | 2,040 | 11,596 | **~19 h 24 m** |
+| large | 367M | 256 | ~8.6GB | 144 ms | 1,777 | 11,596 | **~22 h 16 m** |
 
-**Note:** The Python-for-loop SSM scan remains the dominant bottleneck even with acceleration. Full TinyStories training requires multi-GPU or TPU. These presets are suitable for small-scale experiments, ablation studies, and inference.
+**Note:** All three presets fit on an 8GB laptop GPU. Training `small` on TinyStories for 3 epochs completes in under 5 hours. Medium/large use JIT MIMO fallback — a fixed CUDA MIMO kernel would further improve throughput.
 
 ### VRAM at bf16 (batch=2, seq_len=512 with grad_accum)
 
